@@ -1,0 +1,1578 @@
+---
+title: "Eating Habits and Physical Activities Effects on Obesity "
+subtitle: "Statistical Learning Project"
+author: 
+- "Ngoc Diem Le (2009466)" 
+- "Marina Vicini (2021116)"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Introduction
+
+Obesity is one of the world's largest health problems. According to the
+World Health Organization, since 1975, obesity has nearly tripled
+worldwide [1]. In 2016, 13% of adults aged 18 years and over were obese.
+It is an alarming problem, because it is responsible for 4.7 million
+premature deaths each year [2]. The fundamental cause of obesity and
+overweight is an energy imbalance between calories consumed and calories
+expended. Therefore, the health impact of eating a healthy diet and
+being physically active cannot be underestimated. The goal of this
+project is to indicate which eating habit and physical condition
+variables are most related to obesity levels by evaluating on the
+obesity dataset.
+
+# Dataset
+
+The dataset used is from UC Irvine's Machine Learning Repository [5]  which
+contains 2111 records and 17 attributes for the estimation of obesity
+levels in individuals age 14 to 61 from Mexico, Peru and Colombia, based
+on their eating habits and physical condition [3]. 77% of the data was
+generated synthetically using the Weka tool and the SMOTE filter, 23% of
+the data was collected directly from users through a web platform. The
+records are labeled with the class variable NObesity (Obesity level)
+which divides into 7 categories: Insufficient Weight, Normal Weight,
+Overweight Level I, Overweight Level II, Obesity Type I, Obesity Type II
+and Obesity Type III.
+
+## Data Features
+
+The attributes related with eating habits are: Frequent consumption of
+high caloric food (FAVC), Frequency of consumption of vegetables (FCVC),
+Number of main meals (NCP), Consumption of food between meals (CAEC),
+Consumption of water daily (CH2O), and Consumption of alcohol (CALC).
+The attributes related with the physical condition are: Calories
+consumption monitoring (SCC), Physical activity frequency (FAF), Time
+using technology devices (TUE), Transportation used (MTRANS), other
+variables obtained were: Gender, Age, Height, Weight, Family history
+with overweight (family_history_with_overweight).
+
+| Variable | Meaning                                   |
+|----------|-------------------------------------------|
+| Gender   | User's sex                                |
+| Age      | User's age                                |
+| Height   | Height in m                               |
+| Weight   | Weight in kg                              |
+| FAVC     | Frequent consumption of high caloric food |
+| FCVC     | Frequency of consumption of vegetables    |
+| NCP      | Number of main meals                      |
+| CAEC     | Consumption of food between meals         |
+| SMOKE    | If the user smokes                        |
+| CH2O     | Consumption of water daily                |
+| SCC      | Calories consumption monitoring           |
+| FAF      | Physical activity frequency               |
+| TUE      | Time using technology devices             |
+| CALC     | Consumption of alcohol                    |
+| MTRANS   | Transportation used                       |
+
+```{r, include=FALSE}
+# Load data 
+df = read.csv("ObesityDataSet.csv", sep = ,)
+```
+
+```{r}
+# Overview the dataset
+head(df)
+```
+
+## Data cleaning and preprocessing
+
+For simplicity, target variable NObesity was changed into Obesity and
+the variable family_history_with_overweight was changed into
+family_history.
+
+```{r}
+# Rename column NObeyesdad to Obesity
+names(df)[names(df) == 'NObeyesdad'] <- 'Obesity'
+
+# Rename column family_history_of_obesity to Family_history
+names(df)[names(df) == 'family_history_with_overweight'] <- 'Family_history'
+
+# Check the final column names
+colnames(df)
+```
+
+Body mass index (BMI) is a value derived from the mass (weight) and
+height of a person which is widely used as a risk factor for the
+prevalence of several health issues, especially obesity.
+$$BMI = \frac{Weight}{Height*Height}$$ This index has been used to
+classify the user's obesity status (only for the not synthetic data)
+[2].
+
+WHO and the Mexican normativity classify as such the BMI (kg/m$^2$) [1,
+4]:
+
+-   Underweight: $BMI < 18.5$
+-   Normal: $18.5 < BMI < 24.9$
+-   Overweight: $25.0 < BMI < 29.9$
+-   Obesity I: $30.0 < BMI < 34.9$
+-   Obesity II: $35.0 < BMI < 39.9$
+-   Obesity III: $BMI > 40$
+
+We also create a new binary variable, that classifies between obesity
+and not, called Obesity_binary.
+
+```{r}
+# Create a new column named BMI which calculates the BMI index
+df$BMI = round(df$Weight/(df$Height)**2, 2)
+
+# Categorize obesity level based on BMI with BMI > 30 is Obesity (1) 
+#and BMI <= 30 is Non-Obesity (0)
+for (i in 1:nrow(df)){
+  if (df$BMI[i] <= 30){
+    df$Obesity_binary[i] = 'Not Obese' #Non-obesity
+  } else {
+    df$Obesity_binary[i] = 'Obese' #Obesity
+  }
+}
+
+head(df)
+```
+
+One problem when dealing with cleaning data is duplication. Duplication
+can lead to incorrect conclusion by making people believe that some
+observations are more common than they really are. Therefore, removing
+duplicates is very important before moving on analyzing data.
+
+```{r}
+# Remove duplicate rows in the data frame
+df = unique(df) 
+nrow(df)
+```
+
+As the result, number of observations decreased to 2087, which means 24
+observations have been removed from the dataset. Another important thing
+is to check whether there are any missing values in the dataset, because
+it can skew results.
+
+```{r}
+# Check for number of missing values
+sum(is.na(df)) 
+```
+
+There is no missing values in the dataset.
+
+# Exploratory Data Analysis
+
+For better understanding the data as well as knowing the relationship
+between variables, some graphs are visualized to make the trends and
+patterns to be more easily seen. We start by plotting the number of
+users for Obesity type.
+
+```{r, include = FALSE}
+# Load some libraries
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(gridExtra)
+theme_set(theme_pubr())
+library(leaps)
+
+library(reshape2)
+library(viridis)
+
+library(caret)
+
+library(dplyr)
+
+library(rpart)
+library(rattle)
+library(modEvA)
+library(glmnet)
+library(mgcv)
+library(ROCR)
+library(e1071)
+```
+
+```{r fig1, fig.height=5, fig.width=7, fig.align="center", fig.cap='\\label{fig:fig1} Number of observations per weight classification'}
+# Bar plot for weight classification using Obesity column 
+count_Obesity <- df %>% group_by(Obesity) %>% summarise(counts = n())
+ggplot(count_Obesity, aes(x = Obesity, y = counts)) +
+  geom_bar(fill = "#0073C2FF", stat = "identity") +
+  scale_x_discrete(limits = c('Insufficient_Weight', 'Normal_Weight',
+                              'Overweight_Level_I', 'Overweight_Level_II', 
+                              'Obesity_Type_I', 'Obesity_Type_II',
+                              'Obesity_Type_III')) +
+  geom_text(aes(label = counts), vjust = -0.3) + 
+  ylab('Number of observation') +
+  theme(axis.text.x = element_text(size = 5),
+        axis.title.x = element_blank())
+```
+
+Figure \ref{fig:fig1} shows that the most common type in the dataset is
+type I of obesity and the least common type is insufficient weight.
+Moreover, the dataset seems like balance because the number of
+observations between each category is not different significantly. This
+is the result of synthesizing the data [3].
+
+## Physical Activity
+
+### Means of Transportation
+
+Let us plot the variable called Means of Transportation.
+
+```{r fig4, fig.height=5, fig.width=7, fig.align="center", fig.cap='\\label{fig:fig4} Means of transportation for each weight category'}
+# Count number of observations base on weight classification and means of transportation
+count_MTRANS <- df %>% group_by(Obesity, MTRANS) %>% tally()
+# Bar plot for MTRANS
+ggplot(data = count_MTRANS, aes(x=Obesity, y = n, fill = MTRANS)) +
+  geom_bar(stat = 'identity') +
+  scale_fill_brewer() +
+  ylab('Count') +
+  theme(axis.text.x = element_text(size = 5),
+        axis.title.x = element_blank(),
+        legend.title = element_blank())
+```
+
+Means of transportation are significantly associated with the issues of
+weighting. Figure \ref{fig:fig4} shows that public transportation is the
+most common used vehicle beside with automobile. It can be seen that
+most of people who are in type III of obesity use only public
+transportation. In addition with public transportation, automobile is
+used more by obesity people. By contrast, people who are in normal
+weight walking more than any other type of weight classification.
+Therefore, traveling by automobile or by public transportation rather
+than by motorbike, bike or walking can encourage obesity by eliminating
+physical activity.
+
+```{r figWeight-MTRANS, fig.width=6, fig.align = 'center', fig.cap='\\label{fig:figWeight-MTRANS} Weight cathegory for each means of transportation'}
+# Count number of observations base on weight classification and means of transportation
+count_Obesity <- df %>% group_by(MTRANS, Obesity) %>% tally()
+# Bar plot for Obesity
+ggplot(data = count_Obesity, aes(x=MTRANS, y = n, fill = Obesity)) +
+  geom_bar(stat = 'identity') +
+  scale_fill_brewer() +
+  ylab('Count') +
+  theme(axis.text.x = element_text(size = 5),
+        axis.title.x = element_blank(),
+        legend.title = element_blank())
+```
+
+### Physical Activity Frequency
+
+The importance of physical activity can be shown also by the following
+plot.
+
+```{r figFAF,  fig.height=5, fig.width=7, fig.align = 'center', fig.cap='\\label{fig:figFAF} Physical Activity for Weight classification'}
+# Change the physical activity frequency into numeric
+for (i in 1:nrow(df)){
+  if (df$FAF[i] < 1) {
+    df$FAF_1[i] = 0
+  } else if (df$FAF[i] < 2 & df$FAF[i] >= 1) {
+    df$FAF_1[i] = 1
+  } else if (df$FAF[i] < 3 & df$FAF[i] >= 2) {
+    df$FAF_1[i] = 2
+  } else { 
+    df$FAF_1[i] = 3
+  }
+}
+# Count number of observations base on weight classification 
+#and physical activity frequency
+count_FAF <- df %>% group_by(Obesity, FAF_1) %>% tally()
+# Bar plot for FAF
+count_FAF$FAF_1 = as.factor(count_FAF$FAF_1)
+ggplot(data = count_FAF, aes(x=Obesity, y = n, fill = FAF_1)) +
+  geom_bar(stat = 'identity') +
+  scale_fill_brewer() +
+  ylab('Count') +
+  scale_x_discrete(limits = c('Insufficient_Weight', 'Normal_Weight',
+                              'Overweight_Level_I', 'Overweight_Level_II',
+                              'Obesity_Type_I', 'Obesity_Type_II',
+                              'Obesity_Type_III')) +
+  theme(axis.text.x = element_text(size = 5),
+        axis.title.x = element_blank(),
+        legend.title = element_blank())
+
+# Delete column FAF_1
+df$FAF_1 <- NULL
+```
+
+As we can see on figure \ref{fig:figFAF}, overweight and obesity people
+do not active much. People who frequently take part in physical
+activities are usually have normal weight and some are insufficient
+weight with a little less intensity. Moreover, people with obesity type
+II or more are sedentary.
+
+
+## Eating Habits
+
+Now we can analyze the relationship between BMI or Obesity with eating
+habits. We consider the consumption of high caloric food and calories
+consumption monitoring.
+
+```{r figEat1, fig.width=7, fig.height=4, fig.align='center', fig.cap='\\label{fig:figEat1} Eating Habits'}
+# Boxplot for frequent consumption of high caloric food
+favc_boxplot <- ggplot(data = df, aes(x = FAVC, y = BMI, fill = FAVC)) +
+  geom_boxplot() +
+  theme(legend.position = "none") +
+  xlab('Consumption of high caloric food')
+
+# Boxplot for calories consumption monitoring
+scc_boxplot <- ggplot(data = df, aes(x = SCC, y = BMI, fill = SCC)) +
+  geom_boxplot() +
+  theme(legend.position = "none") +
+  xlab('Calories consumption monitoring')
+scc_boxplot
+
+grid.arrange(favc_boxplot, scc_boxplot, nrow = 1)
+```
+
+The cause of obesity is stated by the World Health Organization as an
+energy imbalance between calories consumed and calories expended. The
+result in the figure \ref{fig:figEat1} clearly indicate that people who
+frequent consumption of high caloric food had a higher BMI than those
+who do not. The next plot shows the relationship between calories
+consumption monitoring and BMI index, which indicates that those people
+who do not control their calories consumption are more likely to have a
+higher BMI than those who control.
+
+
+Then we can focus on the consumption of food between meals and on the
+consumption of alcohol.
+
+```{r figEat2, fig.height = 4, fig.width=7, fig.align='center', fig.cap='\\label{fig:figEat2} Eating Habits'}
+# Boxplot for Consumption of food between meals
+caec_boxplot <- ggplot(data = df, aes(x = CAEC, y = BMI, fill = CAEC)) +
+  geom_violin() +
+  scale_x_discrete(limits = c('no', 'Sometimes', 'Frequently', 'Always')) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 5)) +
+  xlab('Consumption of food between meals')
+
+# Boxplot for Consumption of alcohol
+calc_boxplot <- ggplot(data = df, aes(x = CALC, y = BMI, fill = CALC)) +
+  geom_violin() + 
+  scale_x_discrete(limits = c('no', 'Sometimes', 'Frequently', 'Always')) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 5)) +
+  xlab('Consumption of alcohol')
+
+grid.arrange(caec_boxplot, calc_boxplot, nrow = 1)
+```
+
+In Figure \ref{fig:figEat1}, we do not observe a strong relation between
+BMI and those two cathegories. The same holds for consumption of
+vegetables, shown in \ref{fig:fig5}.
+
+```{r fig5, fig.height=4, fig.width=4, fig.cap='\\label{fig:fig5} Frequency of consumption of vegetables'}
+# Boxplot for Frequency of consumption of vegetables
+# Discretize the continuous variable
+fcvc.discr = cut(df$FCVC, breaks = c(0.99, 1.66, 2.33, 3.1), labels = FALSE)
+df$fcvc.discr = fcvc.discr
+fcvc_boxplot <- ggplot(data = df, aes(x = as.factor(fcvc.discr), y = BMI, 
+                                      fill = as.factor(fcvc.discr))) +
+  geom_boxplot() +
+    xlab('Consumption of vegetables') +
+  theme(legend.title = element_blank()) 
+df$fcvc.discr = NULL
+
+grid.arrange( fcvc_boxplot)
+```
+
+We consider the number of main meals.
+
+```{r figNCP, fig.height=4, fig.width=4, fig.cap='\\label{fig:figNCP} Number of Main Meals'}
+ncp.discr = cut(df$NCP, breaks = c(0.99, 1.5, 2.5, 3.5, 4.1), labels = FALSE)
+df$ncp.discr = ncp.discr
+ggplot(data = df, aes(x = as.factor(ncp.discr), y = BMI, color = as.factor(ncp.discr))) +
+  geom_jitter() +
+  xlab('Number of Main Meals') + 
+  theme(legend.title = element_blank()) +
+  geom_hline(yintercept=30, linetype="dashed", color = "black")  
+df$ncp.discr = NULL
+```
+From Figure \ref{fig:figNCP}, we notice that the majority of the users consume 3 main meals, there is not a clear explanation.
+
+
+```{r figCH2O, fig.height=4, fig.width=4, fig.cap='\\label{fig:figCH2O} Consumption of Water'}
+
+wat.discr = cut(df$CH2O, breaks = c(0.99, 1.5, 2.5, 3.1), labels = FALSE)
+df$wat.discr = wat.discr
+ggplot(data = df, aes(x = as.factor(wat.discr), color = Obesity_binary, fill = Obesity_binary)) +
+  geom_bar(position = 'dodge') +
+  xlab('Consumption of water') + 
+  theme(legend.title = element_blank()) 
+
+df$wat.discr = NULL
+```
+
+In Figure \ref{fig:figCH2O}, we cannot indicate a relation between Obesity and the consumption of water.
+
+## Habits
+
+Lastly, we want to investigate the relation between the obesity variable
+and the user's habits, such as the time using technology and smoking.
+
+### Time using Technology
+
+Lastly, let us consider the time using technology.
+
+```{r figTech, fig.width=5, fig.align='center', fig.cap='\\label{fig:figTech} Time using Technology'}
+# Change time using technology into numeric
+for (i in 1:nrow(df)){
+  if (df$TUE[i] < 1){
+    df$TUE_1[i] = 0
+  } 
+  else if (df$TUE[i] < 2 && df$TUE[i] >= 1) {
+    df$TUE_1[i] = 1
+  } 
+  else {
+    df$TUE_1[i] = 2
+  }
+}
+
+count_TUE <- df %>% group_by(Obesity_binary, TUE_1) %>% tally()
+# Bar plot for TUE
+count_TUE$TUE_1 = as.factor(count_TUE$TUE_1)
+ggplot(data = count_TUE, aes(x=as.factor(Obesity_binary), y = n, fill = TUE_1)) +
+  geom_bar(stat = 'identity') +
+  scale_fill_brewer() +
+  ylab('Count') +
+  theme(axis.text.x = element_text(size = 5),
+        axis.title.x = element_blank(),
+        legend.title = element_blank())
+
+# Delete TUE_1 column
+df$TUE_1 <- NULL
+```
+
+In the Figure \ref{fig:figTech}, we do not see a significant relation
+between use of technology and Obesity.
+
+### Smoking
+
+```{r figSmoke, fig.width=5, fig.align='center', fig.cap='\\label{fig:figSmoke} Smoking Habit'}
+ggplot(df, aes(as.factor(Obesity_binary), fill=SMOKE)) +
+  geom_bar(position="dodge") +
+  scale_x_discrete(element_blank())
+```
+
+We can see in the figure \ref{fig:figSmoke} that the majority of the
+users do not smoke, so we can see that it does not really have an impact
+for the data that we are considering.
+
+## Others
+
+### Height and Weight
+
+Let us continue by computing the density distribution of the variable
+Height and Weight.
+
+```{r fig2, fig.height=3.5, fig.width=7, fig.align="center", fig.cap='\\label{fig:fig2} Weight and Height density'}
+# Density plot of weight and height
+weight_density <- ggplot(data = df, aes(x=Weight)) +
+  geom_histogram((aes(y=..density..)), fill = 'lightblue', color = 'white', bins = 30) +
+  geom_density(alpha = .4, color='darkblue') +
+  geom_vline(aes(xintercept = mean(Weight)),
+             color ='black', linetype='dashed', size = 0.5) 
+height_density <- ggplot(data = df, aes(x=Height)) +
+  geom_histogram((aes(y=..density..)), fill = 'bisque', color = 'white', bins = 30) +
+  geom_density(alpha = .4, color='darkorange') +
+  geom_vline(aes(xintercept = mean(Height)),
+             color ='black', linetype='dashed', size = 0.5)
+grid.arrange(weight_density, height_density, nrow = 1)
+
+```
+
+```{r}
+# Mean of the Height and Weight variable
+cat('Mean of the Height:', round(mean(df$Height),2), 'm', '\n')
+cat('Mean of the Weight:', round(mean(df$Weight), 2), 'kg')
+```
+
+By looking at the density curve in two plots in Figure \ref{fig:fig2},
+it can be seen that the density curve of the Weight variable has the
+bimodal shape with the mean is 86.86 kilogram, and also the Height
+variable shows a bimodel shape with the mean 1.7 meter.
+
+Let us check whether we can explain the shape of the weight density plot
+could be explained by considering two different groups Obese and
+Non-Obese. From the definition of BMI, we know that the variable weight
+is strongly related to the obesity variable.
+
+```{r figWeight-Obesity,fig.height=3.5, fig.align="center", fig.cap='\\label{fig:figWeight-Obesity} Density distributions of the weight of obese and not obese users.'}
+ggplot(df, aes(x=Weight, color=Obesity_binary, fill=Obesity_binary)) +
+  geom_histogram(aes(y=..density..), position="identity", alpha=0.5, bins=30) +
+  geom_density(alpha=0.6)
+```
+
+```{r}
+tapply(df$Weight, df$Obesity_binary, mean)
+```
+
+Then we check whether we can explain the bimodal shape of the density of
+the height in Figure \ref{fig:fig2} considering dividing the population
+according to the Gender.
+
+```{r figHeight-Gender, fig.height=3.5, fig.align="center", fig.cap='\\label{fig:figHeight-Gender} Height density of Male and Female'}
+ggplot(df, aes(x=Height, color=Gender, fill=Gender)) +
+  geom_histogram(aes(y=..density..), position="identity", alpha=0.5, bins=30) +
+  geom_density(alpha=0.6)
+```
+
+```{r}
+tapply(df$Height, df$Gender, mean)
+```
+
+### BMI and Obesity Type
+
+Now, we want to understand the relationship between BMI and Obesity
+Type. To do so we plot a boxplot of the BMI.
+
+```{r fig3, fig.width=8, fig.align="center", fig.cap='\\label{fig:fig3} Box plot for BMI per weight classification'}
+## Box plot for BMI per weight classification
+ggplot(data = df, aes(x = Obesity, y = BMI, fill = Obesity)) +
+  geom_boxplot() +
+  scale_x_discrete(limits = c('Insufficient_Weight', 'Normal_Weight',
+                              'Overweight_Level_I', 'Overweight_Level_II',
+                              'Obesity_Type_I', 'Obesity_Type_II',
+                              'Obesity_Type_III')) +
+  theme(axis.text.x = element_text(size = 5),
+        axis.title.x = element_blank())
+```
+
+Figure \ref{fig:fig3} shows the box plot for weight classification by
+BMI index. It can easily be seen from the graph that BMI has a strong
+relationship with the issues of weighting. According to WHO and Mexican
+Normativity, Obesity type has been classified from the BMI value.
+However, we seen that there are some outliers. Hence, we can plot
+another graph to visualize how many data have been classified
+differently from the proposed WHO classification.
+
+```{r figBMI-Weight-jitters,  fig.width=7, fig.align="center", fig.align="center", fig.cap='\\label{fig:figBMI-Weight-jitters} BMI per weight classification'}
+## BMI per weight classification
+ggplot(data = df, aes(x = Obesity, y = BMI, color = Obesity)) +
+  geom_jitter() +
+  geom_hline(yintercept=18.5, linetype="dashed", color = "black") +
+  geom_hline(yintercept=25, linetype="dashed", color = "black") +
+  geom_hline(yintercept=30, linetype="dashed", color = "black") +
+  geom_hline(yintercept=35, linetype="dashed", color = "black") +
+  geom_hline(yintercept=40, linetype="dashed", color = "black") +
+  scale_x_discrete(limits = c('Insufficient_Weight', 'Normal_Weight',
+                              'Overweight_Level_I', 'Overweight_Level_II',
+                              'Obesity_Type_I', 'Obesity_Type_II',
+                              'Obesity_Type_III')) +
+  theme(axis.text.x = element_text(size = 5),
+        axis.title.x = element_blank())
+```
+
+According to WHO and the Mexican Normative, each pair of classes should
+be linearly separable. There are these mistakes, because most of these
+data have been synthetized. Moreover, we can notice two things, the
+normal weight cathegory is the one where all the elements belong within
+the thresholders and this cathegory does not contain synthetic data. The
+second element that we can consider is that between Overweight Level II
+and Obesity Type I, we have only a few elements outside the threshold,
+and so it does make sense to consider this as threshold for future
+analysis.
+
+### Age
+
+Let us describe the relationship between Age and BMI, classified for
+Obesity.
+
+```{r figAgeBMI, fig.width=7, fig.cap='\\label{fig:figAgeBMI} BMI for age and Obesity type'}
+ggplot(df, aes(Age, BMI, color=Obesity)) + 
+  geom_jitter()
+```
+
+Based on figure \ref{fig:figAgeBMI}, we can see that there is not much
+observations for the age above 40. Most observations are concentrated in
+the age around 18 to 30 and this can be seen from the graph below.
+
+```{r fig9, fig.width=4, fig.height = 4, fig.cap='\\label{fig:fig9} Age distribution'}
+# Density plot of age
+age_density <- ggplot(data = df, aes(x=Age)) +
+  geom_histogram((aes(y=..density..)), fill = 'lightgreen', color = 'white', bins = 30) +
+  geom_density(alpha = .4, color = 'darkgreen')
+plot(age_density)
+```
+
+### Gender
+
+Let us describe BMI classification divided by Gender. In this dataset
+for Gender is meant Sex.
+
+```{r fig10,  fig.width=6, fig.height=5.5, fig.cap='\\label{fig:fig10} Age distribution'}
+ggplot(df, aes(Gender, BMI, color=Obesity)) +
+  geom_count() +
+  scale_x_discrete(element_blank())
+```
+
+We can see that the data are not balanced between male and female, maybe
+because the data are synthetic, but we should just consider the
+distribution of obesity (so grouping different classes) between male and
+female.
+
+```{r figGender-Obesity, fig.width=4, fig.height=4, fig.cap='\\label{fig:figGender-Obesity}  Obesity cathegory for gender'}
+ggplot(df, aes(as.factor(Obesity_binary), fill=Gender)) +
+  geom_bar(position="dodge") +
+  scale_x_discrete(element_blank())
+```
+
+```{r figPieChart, fig.width=4, fig.height=4, fig.cap='\\label{fig:figPieChart}  Percentage of Female and Female'}
+ggplot(df, aes(x=factor(1), fill=Gender))+
+  geom_bar(width = 1)+
+  coord_polar("y") + 
+  theme_void()
+
+fem = length(df$Gender["Female"])
+mal = length(df$Gender["Male"])
+
+cat("Percentage of Female:", fem/(fem+mal)*100, "%\n")
+cat("Percentage of Male:", mal/(fem+mal)*100, "%")
+```
+
+### Family History
+
+Let us now investigate how hereditary is obesity.
+
+```{r fig101, fig.height=3.5, fig.width=7, fig.align="center", fig.cap='\\label{fig:fig100} Family History with Obesity'}
+# Geom_bar for family history with overweight
+ggplot(data = df, aes(x = Family_history, fill = Obesity_binary)) +
+  geom_bar(position = 'dodge') +
+  theme(legend.title = element_blank()) +
+  xlab('Family history with overweight')
+```
+
+In figure \ref{fig:fig101}, we can see the influence of the family history on obesity.
+
+
+# Modelling
+
+In this section, after normalizing the data and separating it into the
+appropriate training and test set, we will analyze it with a Logistic
+Regression model, given that we have a binary target. After this we will
+try to consider feature selection, to identify which feature are most
+relevant and if we can obtain better results symplifying the model. We
+will apply feature selection based on AIC and based on RSS. Furthermore,
+we will consider some regularization techniques, such as Lasso
+regularization and Ridge regularization.
+
+In conclusion, we will analyze a different model based on Decision
+Trees, to have a comparison of two different models.
+
+```{r}
+# Here we should first save the raw data
+df_raw = copy(df)
+```
+
+```{r}
+# Drop current Obesity column
+df$Obesity <- NULL
+
+# Categorize obesity level based on BMI with BMI > 30 is Obesity (1) and 
+#BMI <= 30 is Non-Obesity (0)
+for (i in 1:nrow(df)){
+  if (df$BMI[i] <= 30){
+    df$Obesity[i] = 0 #Non-obesity
+  } else {
+    df$Obesity[i] = 1 #Obesity
+  }
+}
+# Dropping Obesity_binary
+df$Obesity_binary <- NULL
+
+# Dropping BMI
+df$BMI <- NULL
+```
+
+```{r}
+# Convert value in Obesity column into factor
+df$Obesity = as.factor(df$Obesity)
+# Convert Obesity into numeric without loss information (keep 0 and 1)
+df$Obesity = as.numeric(levels(df$Obesity))[df$Obesity] 
+```
+
+```{r}
+# Female = 0, Male = 1
+df$Gender = ifelse(df$Gender == 'Female', 0, 1) 
+
+# Family_history
+df$Family_history = ifelse(df$Family_history == 'no', 0, 1)
+
+# Smoke = 1, Non-smoke = 0
+df$SMOKE = ifelse(df$SMOKE == 'no', 0, 1)
+
+# FAVC
+df$FAVC = ifelse(df$FAVC == 'no', 0, 1)
+
+# SCC
+df$SCC = ifelse(df$SCC == 'no', 0, 1)
+
+# Convert CALC into number factor
+for (i in 1:nrow(df)){
+  if (df$CALC[i] == 'no'){
+    df$CALC[i] = 0
+  } else if (df$CALC[i] == 'Sometimes'){
+    df$CALC[i] = 1
+  } else if (df$CALC[i] == 'Frequently'){
+    df$CALC[i] = 2
+  } else {
+    df$CALC[i] = 3
+  }
+}
+
+# Convert CAEC into number factor
+for (i in 1:nrow(df)){
+  if (df$CAEC[i] == 'no'){
+    df$CAEC[i] = 0
+  } else if (df$CAEC[i] == 'Sometimes'){
+    df$CAEC[i] = 1
+  } else if (df$CAEC[i] == 'Frequently'){
+    df$CAEC[i] = 2
+  } else {
+    df$CAEC[i] = 3
+  }
+}
+
+# Convert MTRANS into number factor
+for (i in 1:nrow(df)){
+  if (df$MTRANS[i] == 'Public_Transportation'){
+    df$MTRANS[i] = 0
+  } else if (df$MTRANS[i] == 'Automobile'){
+    df$MTRANS[i] = 1
+  } else if (df$MTRANS[i] == 'Motorbike'){
+    df$MTRANS[i] = 2
+  } else if (df$MTRANS[i] == 'Bike'){
+    df$MTRANS[i] = 3
+  } else {
+    df$MTRANS[i] = 4
+  }
+}
+```
+
+```{r}
+# Convert Gender into numeric without loss information (keep 0 and 1)
+df$Gender = as.factor(df$Gender)
+df$Gender = as.numeric(levels(df$Gender))[df$Gender]  
+
+# Convert Family_history into numeric without loss information (keep 0 and 1)
+df$Family_history = as.factor(df$Family_history)
+df$Family_history = as.numeric(levels(df$Family_history))[df$Family_history] 
+
+# Convert SMOKE into numeric without loss information (keep 0 and 1)
+df$SMOKE = as.factor(df$SMOKE)
+df$SMOKE = as.numeric(levels(df$SMOKE))[df$SMOKE] 
+
+# Convert FAVC into numeric without loss information (keep 0 and 1)
+df$FAVC = as.factor(df$FAVC)
+df$FAVC = as.numeric(levels(df$FAVC))[df$FAVC] 
+
+# Convert SCC into numeric without loss information (keep 0 and 1)
+df$SCC = as.factor(df$SCC)
+df$SCC = as.numeric(levels(df$SCC))[df$SCC]
+
+# Convert CALC into numeric without loss information (keep 0 and 1)
+df$CALC = as.factor(df$CALC)
+df$CALC = as.numeric(levels(df$CALC))[df$CALC] 
+
+# Convert CAEC into numeric without loss information (keep 0 and 1)
+df$CAEC = as.factor(df$CAEC)
+df$CAEC = as.numeric(levels(df$CAEC))[df$CAEC] 
+
+# Convert MTRANS into numeric without loss information (keep 0 and 1)
+df$MTRANS = as.factor(df$MTRANS)
+df$MTRANS = as.numeric(levels(df$MTRANS))[df$MTRANS]
+```
+
+```{r figcm, fig.height=7, fig.width=7, fig.cap='\\label{fig:figcm} Correlation matrix'}
+# Save df into data for modelling part
+data = df
+
+# Correlation matrix 
+corr_mat <- round(cor(data),2)
+head(corr_mat)
+
+# Reorder the correlation matrix
+reorder_corr_mat <- function(corr_mat){
+  dd <- as.dist((1-corr_mat)/2)
+  hc <- hclust(dd)
+  corr_mat <- corr_mat[hc$order, hc$order]
+}
+
+corr_mat <- reorder_corr_mat(corr_mat)
+
+# Melt the correlation matrix
+melted_corr_mat <- melt(corr_mat)
+
+# Heatmap for correlation matrix
+ggheatmap <- ggplot(melted_corr_mat, aes(Var2, Var1, fill = value)) +
+  geom_tile(color = 'white') +
+  geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+  scale_fill_viridis() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_x_discrete(element_blank()) +
+  scale_y_discrete(element_blank())
+
+print(ggheatmap)
+```
+
+Figure \ref{fig:figcm} shows the heatmap with strong relationship
+between 2 pairs: Obesity and Weight, Height and Gender. To avoid
+multicollinearity, we will drop the Weight column because of high
+corelation with the target variable Obesity.
+
+```{r}
+# Dropping weight column
+data$Weight <- NULL
+```
+
+```{r fig6, fig.height=4, fig.width=7, fig.cap='\\label{fig:fig6} Number of observation per weight classification'}
+# TARGET VARIABLE: Obesity
+count_Obesity <- data %>% group_by(Obesity) %>% summarise(counts = n())
+count_Obesity
+
+ggplot(count_Obesity, aes(x = as.factor(Obesity), y = counts)) +
+  geom_bar(fill = "#0073C2FF", stat = "identity") +
+  geom_text(aes(label = counts), vjust = -0.3) + 
+  xlab('Weight classification') +
+  ylab('Number of observation') +
+  scale_x_discrete(labels = c('Non-obesity', 'Obesity')) +
+  theme_pubclean()
+```
+
+## Normalize the data
+
+Before going deep into the model, we normalize the data.
+
+```{r}
+# Normalize the data
+preprocess <- preProcess(data, method = c('range'))
+data <- predict(preprocess, data)
+summary(data)
+head(data)
+```
+
+Then we split the data into two sets: training and test with the ratio
+7:3.
+
+```{r}
+# Splitting test and training data (70% training and 30% testing)
+set.seed(1234)
+
+# Create a dummy indicator that indicates whether a row is assigned to the 
+#training or testing data set
+split_dummy <- sample(c(rep(0, 0.7 * nrow(data)),
+                        rep(1, 0.3 * nrow(data))))
+print(table(split_dummy))
+```
+
+Creating training and test set based on variable split_dummy
+
+```{r}
+# Create a train data set
+data_train <- data[split_dummy == 0, ]
+row.names(data_train) <- NULL # Reorder index
+head(data_train)
+
+x_train <- data_train %>% select(1:15)
+y_train <- data_train %>% select(16) #Obesity column
+y_train <- y_train[,1] # y_train should be a vector
+```
+
+```{r}
+# Create a test data set
+data_test <- data[split_dummy == 1, ]
+row.names(data_test) <- NULL # Reorder index
+head(data_test)
+
+x_test <- data_test %>% select(1:15)
+y_test <- data_test %>% select(16) # Obesity column
+y_test <- y_test[,1] # y_test should be a vector
+```
+
+## Logistic Regression
+
+```{r}
+model_lr <- glm(as.factor(Obesity) ~ ., data = data_train, family = binomial)
+
+# Summary of model
+summary(model_lr)
+```
+
+As we can see on the coefficients column above, there are some variables
+which have strong connect with Obesity because of high values. These are
+Age, Family_history, CAEC and MTRANS. It definitely makes sense because
+based on the graph \ref{fig:figAgeBMI}, elderly people are more likely
+to have problem with weight, the figure \ref{fig101} shows people whose
+family has history with overweight are easily have obesity than those
+family do not, figure \ref{fig:fig4} proves that people who use less
+strenuous means of transport are more likely to have obesity and the
+more consumption of food between meals, the less likely you are to have
+weight problems.
+
+Moreover, there are some variables which are not really significant in
+our model, they are Gender, NCP, SMOKE, CH2O, TUE and CALC.
+
+```{r}
+# Calculate training and test accuracy based on the threshold 0.5
+train_prob <- predict(model_lr, data_train, type = 'response')
+train_pred <- ifelse(train_prob > 0.5, 1, 0)
+train_acc <- mean(train_pred == data_train$Obesity)
+
+test_prob <- predict(model_lr, data_test, type = 'response')
+test_pred <- ifelse(test_prob > 0.5, 1, 0)
+test_acc <- mean(test_pred == data_test$Obesity)
+
+cat('Training accuracy: ', train_acc,'\n')
+cat('MSE of training data: ',mean((train_pred - y_train)^2),'\n')
+cat('Test accuracy: ', test_acc,'\n')
+cat('MSE of test data: ',mean((test_pred - y_test)^2))
+```
+
+```{r}
+# Define a function to compare two ROC curves of training and test set
+plot_roc <- function(y_train, y_test, train_prob, test_prob){
+  roc_train = AUC(obs = y_train, pred = train_prob, 
+                  main='ROC Curve on train set', plot=TRUE)  
+  roc_test = AUC(obs = y_test, pred = test_prob, 
+                 main='ROC Curve on test set', plot=TRUE)
+}
+```
+
+```{r fig13, fig.height=5, fig.width=6, fig.cap='\\label{fig:fig13}'}
+# Plot the ROC curve for training set
+par(mfrow = c(1,1))
+roc_lr = AUC(model_lr, main='ROC Curve on training set')
+```
+
+Figure \ref{fig:fig13} shows the ROC curve on training set based on
+logistic regression. ROC curves and AUC tell how much the model is
+capable of distinguishing between classes. Higher the AUC, the better
+the model is at predicting 0 classes as 0 and 1 classes as 1. In this
+case, the AUC is 0.86, it means there is 86% chance that the model will
+be able to distinguish between obesity and non-obesity observations.
+
+```{r}
+# Calculate some metric based on train set
+metric = data.frame(AUC(obs = data_train$Obesity, pred = train_prob, 
+                        main = 'ROC Curve', plot=FALSE))
+
+metric_train = metric[, c('thresholds.thresholds', 'thresholds.sensitivity',
+                          'thresholds.precision')]
+
+accuracies_train = c()
+for (i in metric_train$thresholds.thresholds){
+  train_pred = ifelse(train_prob > i, 1, 0)
+  train_acc = mean(train_pred == data_train$Obesity)
+  accuracies_train = c(accuracies_train, train_acc)
+}
+metric_train$accuracies = accuracies_train
+colnames(metric_train) = c('Threshold', 'Sensitivity', 'Precision', 'Accuracy')
+head(metric_train)
+```
+
+```{r}
+# Find the optimal threshold
+max = which.max(metric_train$Accuracy)
+optimal_threshold = metric_train$Threshold[max]
+best_accuracy = metric_train$Accuracy[max]
+cat('Opimal threshold: ', optimal_threshold, '\n', 'Best accuracy: ', best_accuracy)
+```
+
+We can see that, based on the result in training set, the optimal
+threshold with the value 0.48 gives us the highest accuracy.
+
+```{r}
+# Calculate the accuracy based on optimal threshold
+train_prob_lr <- predict(model_lr, data_train, type = 'response')
+train_pred_lr <- ifelse(train_prob_lr > optimal_threshold, 1, 0)
+train_acc_lr <- mean(train_pred_lr == data_train$Obesity)
+
+test_prob_lr <- predict(model_lr, data_test, type = 'response')
+test_pred_lr <- ifelse(test_prob_lr > optimal_threshold, 1, 0)
+test_acc_lr <- mean(test_pred_lr == data_test$Obesity)
+
+cat('Training accuracy: ', train_acc,'\n',
+    'Test accuracy: ', test_acc)
+```
+
+```{r}
+#Confusion matrix for train set
+conf_mat_train = confusionMatrix(as.factor(train_pred_lr), as.factor(y_train)) 
+conf_mat_train
+```
+
+```{r}
+# Confusion matrix on the test set
+conf_mat_test = confusionMatrix(as.factor(test_pred_lr), as.factor(y_test))
+conf_mat_test
+```
+
+```{r fig-roc-lr, fig.height=7, fig.width=7, fig.cap='\\label{fig:fig-roc-lr} ROC curve on logistic regresion model'}
+# ROC curve of train and test set
+plot_roc(y_train, y_test, train_prob_lr, test_prob_lr)
+```
+
+Beside the accuracy, we should care about the AUC, as we can see, on the
+training set, the AUC is 0.86 and on the test set the AUC is 0.848 which
+is slightly decrease, it shown that our model is stable.
+
+## Variable Selection
+
+In this part, we use some variable selection method to find which
+variables have the meaning in our data.
+
+### AIC method
+
+First of all is the AIC method.
+
+```{r}
+# Implement stepwise selection based on AIC
+step_model = step(model_lr)
+summary(step_model)
+step_model$anova
+```
+
+The model with the smallest AIC gives us 9 independent variables in
+total, which removes CH2O, SMOKE, TUE, Gender, CALC, NCP.
+
+```{r}
+model_AIC = glm(Obesity ~ Age + Height + Family_history + FAVC + FCVC + CAEC + 
+                  SCC + FAF + MTRANS, family = binomial, data = data_train)
+```
+
+```{r}
+# Calculate the accuracy based on optimal threshold
+train_prob <- predict(model_AIC, data_train, type = 'response')
+train_pred <- ifelse(train_prob > optimal_threshold, 1, 0)
+train_acc <- mean(train_pred == data_train$Obesity)
+
+test_prob <- predict(model_AIC, data_test, type = 'response')
+test_pred <- ifelse(test_prob > optimal_threshold, 1, 0)
+test_acc <- mean(test_pred == data_test$Obesity)
+
+cat('Training accuracy: ', train_acc,'\n',
+    'Test accuracy: ', test_acc)
+```
+
+```{r}
+# Confusion matrix on training set
+conf_mat_train = confusionMatrix(as.factor(train_pred), as.factor(y_train)) 
+conf_mat_train
+```
+
+```{r}
+# Confusion matrix on test set
+conf_mat_test = confusionMatrix(as.factor(test_pred), as.factor(y_test))
+conf_mat_test
+```
+
+```{r}
+# ROC curve for training and test set
+plot_roc(y_train, y_test, train_prob, test_prob)
+```
+
+In this case, we can see that the AUC on the training set is 0.857 and
+it is lightly decreases compare with the AUC in the full model.
+
+### Best subsets method
+
+In this part, we perfrom backward elimination by using regsubsets
+function. regsubsets() can be used to identify different best models of
+different sizes. In this case, we choose the maximum number of
+predictors, which is 15.
+
+```{r}
+# Using regsubsets using backward method
+regfit.full <- regsubsets(Obesity~., data=data_train, method ='backward', nvmax = 15)
+reg.summary <- summary(regfit.full)
+reg.summary
+```
+
+The output above shows that the most important variable is
+family_history, which indicates that the family has history of
+overweight or not. The following 4 important variables are FAVC
+(Frequent consumption of high caloric food), CAEC (Consumption of food
+between meals), FCVC (Frequency of consumption of vegetables) and Age.
+We can see that 3 out of 5 most important variables based on best
+subsets selection related to eating habits, which indicates that diet
+directly affect weight problem.
+
+Moreover, the function return up to the best 15-variables model. To
+identify which of these best models should we finally choose for our
+predictive analytics, we need to use some statistical metrics to compare
+the overall performance of the models and to choose the best one. By
+using some model selection criteria like Adjusted R-squared, Cp and BIC,
+we have the following results.
+
+```{r}
+# Plotting RSS, adjusted  R2,  Cp, and BIC for all of the models at once will help us
+# decide which model to select. 
+
+par(mfrow=c(2,2))
+
+# residual sum of squares
+plot(reg.summary$rss,xlab="Number of Variables",ylab="RSS",type="l")
+
+# adjusted-R^2 with its largest value
+plot(reg.summary$adjr2,xlab="Number of Variables",ylab="Adjusted RSq",type="l")
+which.max(reg.summary$adjr2)
+points(which.max(reg.summary$adjr2),reg.summary$adjr2[which.max(reg.summary$adjr2)],
+       col="red",cex=2,pch=20)
+
+# Mallow's Cp with its smallest value
+plot(reg.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+which.min(reg.summary$cp)
+points(which.min(reg.summary$cp),reg.summary$cp[which.min(reg.summary$cp)],
+       col="red",cex=2,pch=20)
+
+# BIC with its smallest value
+plot(reg.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
+which.min(reg.summary$bic)
+points(which.min(reg.summary$bic),reg.summary$bic[which.min(reg.summary$bic)],
+       col="red",cex=2,pch=20)
+```
+
+Based on the plot above, we can see that adjusted R-squared tells us
+that the best model is the one with 12 predictor variables. However,
+using the Cp criteria, we got a model with 10 predictor variables and
+with the BIC, we got 9 predictor variables. To evaluate the performance
+of each "best" model, we run the code below.
+
+```{r}
+# Fit the model with 12 independent variables
+train.glm12 <- glm(Obesity ~ Gender + Age + Height + Family_history + FAVC + 
+                     FCVC + NCP + SCC + FAF + TUE + CAEC + MTRANS,
+                   family = binomial, data=data_train) 
+                # remove NCP, SMOKE, CH2O, CALC
+
+train_prob12 <- predict(train.glm12, data_train, type = 'response')
+train_pred12 <- ifelse(train_prob12 > optimal_threshold, 1, 0)
+train_acc12 <- mean(train_pred12 == data_train$Obesity)
+
+test_prob12 <- predict(train.glm12, data_test, type = 'response')
+test_pred12 <- ifelse(test_prob12 > optimal_threshold, 1, 0)
+test_acc12 <- mean(test_pred12 == data_test$Obesity)
+
+cat('Training accuracy: ', train_acc12,'\n',
+    'Test accuracy: ', test_acc12)
+```
+
+```{r}
+plot_roc(y_train, y_test, train_prob12, test_prob12)
+```
+
+```{r}
+# Fit the model with 10 independent variables
+train.glm10 <- glm(Obesity ~ Age + Height + Family_history + FAVC + FCVC + 
+                     NCP + SCC + FAF + CAEC + MTRANS,
+                   family = binomial, data=data_train) 
+
+train_prob10 <- predict(train.glm10, data_train, type = 'response')
+train_pred10 <- ifelse(train_prob10 > optimal_threshold, 1, 0)
+train_acc10 <- mean(train_pred10 == data_train$Obesity)
+
+test_prob10 <- predict(train.glm10, data_test, type = 'response')
+test_pred10 <- ifelse(test_prob10 > optimal_threshold, 1, 0)
+test_acc10 <- mean(test_pred10 == data_test$Obesity)
+
+cat('Training accuracy: ', train_acc10,'\n',
+    'Test accuracy: ', test_acc10)
+```
+
+```{r}
+plot_roc(y_train, y_test, train_prob10, test_prob10)
+```
+
+```{r}
+train.glm9 <- glm(Obesity ~ Age + Height + Family_history + FAVC + FCVC + CAEC + 
+                    SCC + FAF + MTRANS,
+                   family = binomial, data=data_train)
+              # remove Gender, NCP, SMOKE, Height, TUE, CALC
+
+train_prob9 <- predict(train.glm9, data_train, type = 'response')
+train_pred9 <- ifelse(train_prob9 > optimal_threshold, 1, 0)
+train_acc9 <- mean(train_pred9 == data_train$Obesity)
+
+test_prob9 <- predict(train.glm9, data_test, type = 'response')
+test_pred9 <- ifelse(test_prob9 > optimal_threshold, 1, 0)
+test_acc9 <- mean(test_pred9 == data_test$Obesity)
+
+cat('Training accuracy: ', train_acc9,'\n',
+    'Test accuracy: ', test_acc9)
+```
+
+```{r}
+plot_roc(y_train, y_test, train_prob9, test_prob9)
+```
+
+As the result, the model with 12 predictor variables gives us the
+highest accuracy among training and test set as well as the highest AUC
+value from the test set.
+
+### Cross-validation method
+
+```{r}
+### CROSS-VALIDATION
+model_cv <- regsubsets(Obesity ~ ., data = data_train, nvmax = 15)
+model_matrix <- model.matrix(Obesity ~ ., data = data_test)
+val_errors <- rep(NA, 15)
+for (i in 1:15){
+  coefi <- coef(model_cv, id = i)
+  pred <- model_matrix[,names(coefi)] %*% coefi
+  val_errors[i] <- mean((y_test - pred)^2)
+}
+
+plot(val_errors, type = 'b')
+```
+
+Above is the result by using cross-validation method. The model gives us
+the smallest validation error is the model with 13 variables and the
+corresponding coefficients.
+
+```{r}
+# Fit the model with 13 variables
+model_cv <- glm(Obesity ~ Gender + Age + Height + Family_history + FAVC + 
+                     FCVC + NCP + SCC + FAF + TUE + CAEC + MTRANS + CH2O,
+                   data=data_train, family='binomial') 
+summary(model_cv)
+```
+
+```{r}
+train_cv <- predict(model_cv, data_train, type = 'response')
+train_pred_cv <- ifelse(train_cv > optimal_threshold, 1, 0)
+train_acc_cv <- mean(train_pred_cv == data_train$Obesity)
+
+test_cv <- predict(model_cv, data_test, type = 'response')
+test_pred_cv <- ifelse(test_cv > optimal_threshold, 1, 0)
+test_acc_cv <- mean(test_pred_cv == data_test$Obesity)
+
+cat('Training accuracy: ', train_acc_cv,'\n',
+    'Test accuracy: ', test_acc_cv)
+```
+
+```{r}
+# Confusion matrix on train set
+conf_mat_test = confusionMatrix(as.factor(train_pred_cv), as.factor(y_train))
+conf_mat_test
+```
+
+```{r}
+# Confusion matrix on test set
+conf_mat_test = confusionMatrix(as.factor(test_pred_cv), as.factor(y_test))
+conf_mat_test
+```
+
+```{r}
+plot_roc(y_train, y_test, train_cv, test_cv)
+```
+
+## Regularization
+
+In this part, we will do some regularization methods to evaluate the
+performance on our data.
+
+```{r}
+# Prepare data for Regularization
+X_train = as.matrix(x_train)
+X_test = as.matrix(x_test)
+X = as.matrix(data %>% select(1:15))
+y = data %>% select(16)
+y = y[,1]
+
+grid = 10^seq(5, -5, length=100)
+```
+
+### Lasso Regression (L1 Regularization)
+
+We first illustrate Lasso regression, which can be fit using glmnet()
+with alpha = 1.
+
+```{r}
+# Fit lasso model on training data
+lasso_mod = glmnet(X_train, as.factor(y_train), 
+                   alpha=1, #alpha=1 for lasso regression
+                   lambda=grid, family="binomial") 
+
+# Plot the coefficients varies by lambda
+plot(lasso_mod, label=TRUE, xvar = 'lambda') #draw plot of coefficients
+```
+
+The graph above shows how much the coefficients of the model are
+penalized for different values of lambda. Each curve corresponds to a
+variable and the number begins at each curve corresponds to the position
+of that variable on the dataset. Notice along the top is the number of
+features in the model, in this case, the variables decrease.
+
+We use cross-validation to select a good lambda value.
+
+```{r}
+cv_out_lasso = cv.glmnet(X_train, y_train, alpha=1, family='binomial') 
+best_lambda_lasso = cv_out_lasso$lambda.min
+cat('Optimal lambda: ', best_lambda_lasso)
+plot(cv_out_lasso)
+```
+
+This plots the cross-validation curve (red dotted line) along with upper
+and lower standard deviation curves along the lambda sequence. Two
+special values along the lambda sequence are indicated by the vertical
+dotted lines, the left indicates the value of lambda that gives minimum
+mean cross-validated error.
+
+```{r}
+lasso_prob_train = predict(lasso_mod, s=best_lambda_lasso, newx=X_train, type='response')
+lasso_pred_train = ifelse(lasso_prob_train > optimal_threshold, 1, 0)
+acc_train = mean(lasso_pred_train == y_train)
+cat('Accuracy of training data: ',acc_train,'\n')
+cat('MSE of training data: ',mean((lasso_pred_train - y_train)^2))
+```
+
+```{r}
+lasso_prob_test = predict(lasso_mod, s=best_lambda_lasso, newx=X_test, type='response')
+lasso_pred_test = ifelse(lasso_prob_test > optimal_threshold, 1, 0)
+acc_test = mean(lasso_pred_test == y_test)
+cat('Accuracy of test data: ',acc_test,'\n')
+cat('MSE of test data: ',mean((lasso_pred_test - y_test)^2))
+```
+
+```{r}
+# Confusion matrix on train set
+conf_mat_test = confusionMatrix(as.factor(lasso_pred_train), as.factor(y_train))
+conf_mat_test
+```
+
+```{r}
+# Confusion matrix on test set
+conf_mat_test = confusionMatrix(as.factor(lasso_pred_test), as.factor(y_test))
+conf_mat_test
+```
+
+```{r}
+plot_roc(y_train, y_test, as.numeric(lasso_prob_train), as.numeric(lasso_prob_test))
+```
+
+### Ridge regression (L2 regularization)
+
+We now illustrate the Ridge regression, which can be fit using glmnet()
+with alpha = 0.
+
+```{r}
+ridge_mod = glmnet(X_train, y_train, alpha=0, lambda=grid, family='binomial')
+# Plot the coefficients varies by lambda
+plot(ridge_mod, label=TRUE, xvar='lambda')
+```
+
+This plot illustrates how much the coefficients are penalized for
+different values of lambda. Again, to actually pick a lambda, we will
+use cross-validation. The plot is similar to the lasso plot. Notice
+along the top is the number of features in the model, in this case, all
+variables are kept, which makes it different with the lasso regression.
+
+```{r}
+#Using CV to choose the tunning parameter lambda
+cv.out = cv.glmnet(X_train, y_train, alpha=0, family='binomial')
+best_lambda = cv.out$lambda.min #Select lambda that minimizes training MSE
+cat('Optimal lambda: ', best_lambda)
+plot(cv.out) #Draw plot of training MSE as a function of lambda
+```
+
+The plot displays the cross-validation error according to the log of
+lambda, the left dashed vertical line indicates that the log of the
+optimal value of lambda approximately -4, which is the one that
+minimizes the prediction error. This lambda value will give the most
+accurate model.
+
+```{r}
+ridge_prob_train = predict(ridge_mod, s=best_lambda, newx=X_train, type='response')
+ridge_pred_train = ifelse(ridge_prob_train > optimal_threshold, 1, 0)
+acc_train = mean(ridge_pred_train == y_train)
+cat('Accuracy of training data: ',acc_train,'\n')
+cat('MSE of training data: ',mean((ridge_pred_train - y_train)^2))
+```
+
+```{r}
+ridge_prob_test = predict(ridge_mod, s=best_lambda, newx=X_test, type='response')
+ridge_pred_test = ifelse(ridge_prob_test > optimal_threshold, 1, 0)
+acc_test = mean(ridge_pred_test == y_test)
+cat('Accuracy of test data: ',acc_test,'\n')
+cat('MSE of test data: ',mean((ridge_pred_test - y_test)^2))
+```
+
+```{r}
+# Confusion matrix on train set
+conf_mat_test = confusionMatrix(as.factor(ridge_pred_train), as.factor(y_train))
+conf_mat_test
+```
+
+```{r}
+# Confusion matrix on test set
+conf_mat_test = confusionMatrix(as.factor(ridge_pred_test), as.factor(y_test))
+conf_mat_test
+```
+
+```{r}
+plot_roc(y_train, y_test, as.numeric(ridge_prob_train), as.numeric(ridge_prob_test))
+```
+
+## Decision tree
+
+To handle with classification problem, we apply a supervised machine
+learning algorithm called decision tree.
+
+```{r}
+# Drop the Weight variable on df
+df$Weight <- NULL
+
+# Change the column type of character to factor 
+df$Gender = as.factor(df$Gender)
+df$Family_history = as.factor(df$Family_history)
+df$FAVC = as.factor(df$FAVC)
+df$CAEC = as.factor(df$CAEC)
+df$SMOKE = as.factor(df$SMOKE)
+df$SCC = as.factor(df$SCC)
+df$CALC = as.factor(df$CALC)
+df$MTRANS = as.factor(df$MTRANS)
+df$Obesity = as.factor(df$Obesity)
+```
+
+```{r}
+# Create a train data set
+df_train <- df[split_dummy == 0, ]
+row.names(df_train) <- NULL # Reorder index
+head(df_train)
+
+# library(dplyr)
+x_train <- df_train %>% select(1:15)
+y_train <- df_train %>% select(16)
+y_train <- y_train[,1] # y_train should be a vector
+```
+
+```{r}
+# Create a test data set
+df_test <- df[split_dummy == 1, ]
+row.names(df_test) <- NULL # Reorder index
+head(df_test)
+
+x_test <- df_test %>% select(1:15)
+y_test <- df_test %>% select(16)
+y_test <- y_test[,1] # y_test should be a vector
+```
+
+In R language, we can use rpart library to perform a decision tree.
+
+```{r figdt, fig.height=5, fig.width=6, fig.cap='\\label{fig:figdt}'}
+model_dt = rpart(Obesity ~ ., data=df_train, method='class')
+fancyRpartPlot(model_dt, main='Classification Tree')
+```
+
+At the top is the root node, it shows that 54% of observations are
+non-obesity while 46% are obesity and the number below indicates the
+proportion of the population that resides in this node, here at the top
+level so it is 100%. Travelling down the tree branches, if the family
+history with overweight does not happen, 97% of observation are
+non-obesity, and if it happens, 56% of observation are obesity and so on
+until we reach the leaf nodes.
+
+In decision tree, nodes are arranged in order of priority, the top nodes
+have higher priority than the ones below. Based on figure
+\ref{fig:figdt}, we can see that the first 5 nodes are Family_history,
+CAEC, NCP, FAVC and FCVC. Once again, as we saw on the best subsets
+method, the most important predictors of obesity are often related to
+dietary problems.
+
+```{r}
+# Evaluate the model on training set
+pred_dt_train <- predict(model_dt, df_train, type='prob')
+pred_train <- ifelse(pred_dt_train[,2] > optimal_threshold, 1, 0)
+confusionMatrix(as.factor(y_train), as.factor(pred_train))
+```
+
+```{r}
+pred <- prediction(pred_dt_train[,2], y_train)
+perf <- performance(pred, 'tpr', 'fpr')
+auc <- performance(pred, measure='auc')
+cat('AUC: ', round(auc@y.values[[1]], 4))
+plot(perf, main='ROC curve for training set', col=2, lwd=2)
+abline(a=0, b=1, lwd = 2,lty = 3,col = "black")
+```
+
+```{r}
+# Evaluate the model on test set
+pred_dt_test <- predict(model_dt, df_test, type='prob')
+pred_test <- ifelse(pred_dt_test[,2] > optimal_threshold, 1, 0)
+confusionMatrix(as.factor(y_test), as.factor(pred_test))
+```
+
+```{r}
+pred <- prediction(pred_dt_test[,2], y_test)
+perf <- performance(pred, 'tpr', 'fpr')
+auc <- performance(pred, measure='auc')
+cat('AUC: ', round(auc@y.values[[1]], 4))
+plot(perf, main='ROC curve for test set', col=2, lwd=2)
+abline(a=0, b=1, lwd = 2,lty = 3,col = "black")
+```
+
+## Result
+
+|                     | Train    | Train | Test     | Test  |
+|---------------------|----------|-------|----------|-------|
+|                     | Accuracy | AUC   | Accuracy | AUC   |
+| Logistic Regression | 0.791    | 0.86  | 0.746    | 0.848 |
+| Variable Selection  |          |       |          |       |
+| AIC                 | 0.786    | 0.858 | 0.741    | 0.849 |
+| Best Subsets        | 0.783    | 0.858 | 0.758    | 0.85  |
+| Cross-validation    | 0.783    | 0.858 | 0.748    | 0.849 |
+| Regularization      |          |       |          |       |
+| Lasso Regression    | 0.786    | 0.858 | 0.743    | 0.849 |
+| Ridge Regression    | 0.775    | 0.857 | 0.749    | 0.848 |
+| Decision Tree       | 0.862    | 0.899 | 0.807    | 0.861 |
+
+The table above shows the accuracy and AUC value based on 7 methods
+applied on the Obesity data. We can see that most of methods have the
+same performance with the accuracy and AUC value approximately 79% and
+85% respectively. However, with supervised machine learning method
+Decision Tree, the result is outperform than other methods based on the
+accuracy, with the accuracy 86% compared with 79% of the logistic
+regression, it shows that with classification problem, decision tree has
+a better performance than traditional methods.
+
+```{r}
+cat('Confusion matrix of Logistic Regression on test set:')
+table(as.factor(y_test), as.factor(test_pred_lr))
+cat('Confusion matrix of Decision tree on test set:')
+table(as.factor(y_test), as.factor(pred_test))
+```
+
+We can see that, with decision tree method, the number of correctly
+predicted non-obesity observations are higher than logistic regression
+but the number of correctly predicted obesity observations are lower
+than logistic regression. However, in this problem, we want to focus on
+obesity observations, therefore, if an obese person is predicted to be
+non-obese is more dangerous than if a non-obese person is predicted to
+be obese. In this case, decision tree does a better job with 76
+incorrectly predicted compared with 132 cases in logistic regression.
+
+# Conclusion
+
+Obesity is becoming an alarming health problem, affecting an appalling
+percentage of the population and causing the death of many individuals. The impact of eating habits and physical activities can be shown after doing EDA and modelling using some basic methods. In conclusion, the most important predictor is Family_history, which directly affect an observation is obese or not. Moreover, certain eating habits play a key role in weight control, such as FAVC (the frequency consumption of high caloric food), CAEC (the consumption of food between meals), FCVC (the frequency consumption of vegetables). Besides, some physical conditions play an important part like MTRANS (Transportation used) and FAF (Physical activity frequency). Some other factors are not impactful across the board were Smoke, CH2O (The consumption of water daily) and CALC (The consumption of alcohol). There is a factor NCP (Number of main meals) which shows less important in Logistic Regression model but it plays a key role in Decision Tree model that can be explained by the fact that not all the independent variables are linearly related, some of which are not linearly related to each other. For the future work, we want to apply another method called Generalized Additive Model (GAM) which is allowed to learn non-linear features in order to evaluate which variable has nonlinear relationships with the Obesity type.
+
+# Bibliography
+
+[[1]](https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight)
+WHO, 2021. World Health Organization. Obesity and overweight.
+
+[[2]](https://ourworldindata.org/obesity#what-are-the-drivers-of-obesity)
+Hannah Ritchie and Max Roser (2017) - "Obesity". Published online at
+OurWorldInData.org, 2017. '<https://ourworldindata.org/obesity>'
+
+[[3]](https://www.sciencedirect.com/science/article/pii/S2352340919306985)
+Fabio Mendoza Palechor, Alexis de la Hoz Manotas. Dataset for estimation
+of obesity levels based on eating habits and physical condition in
+individuals from Colombia, Peru and Mexico. Data in Brief, Volume 25,
+2019, 104344, ISSN 2352-3409,
+<https://doi.org/10.1016/j.dib.2019.104344>.
+
+[[4]](http://diariooficial.gob.mx/nota_detalle.php?codigo=5154226&fecha=04/08/2010)
+DO, NORMA Oficial Mexicana NOM-008-SSA3-2010, Para el tratamiento
+integral del sobrepeso y la obesidad, Diario Oficial, 2010.
+
+[5] Dataset directory https://archive.ics.uci.edu/ml/datasets/Estimation+of+obesity+levels+based+on+eating+habits+and+physical+condition+#
